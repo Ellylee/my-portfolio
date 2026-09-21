@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>구글 시트 연동 포트폴리오 히트맵</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <!-- CSV 파싱 라이브러리 (PapaParse) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+  <style>
+    body { background-color: #0f172a; color: #f8fafc; font-family: -apple-system, sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script>
+    const { useState, useEffect, useMemo, createElement: h, Fragment } = React;
+    const { ResponsiveContainer, Treemap, Tooltip } = window.Recharts;
+
+    // ⚠️ 여가지에 본인의 구글 시트 [웹에 게시] CSV URL을 넣으세요!
+    const GOOGLE_SHEET_CSV_URL = "여기에_구글시트_CSV_URL_붙여넣기";
+
+    function pnlColor(returnPct, isCash = false) {
+      if (isCash) return "#475569";
+      if (returnPct > 15) return "#16a34a";
+      if (returnPct > 7) return "#22c55e";
+      if (returnPct > 0) return "#15803d";
+      if (returnPct === 0) return "#374151";
+      if (returnPct > -7) return "#b91c1c";
+      return "#dc2626";
+    }
+
+    function Tile({ x, y, width, height, name, returnPct, assetClass }) {
+      if (width < 40 || height < 25) return null;
+      const isCash = assetClass === "현금성 자산";
+      const background = pnlColor(returnPct, isCash);
+      const compact = width < 80 || height < 50;
+
+      return h("g", null,
+        h("rect", {
+          x, y, width, height, rx: 3, ry: 3, fill: background, stroke: "#0f172a", strokeWidth: 2,
+          className: "transition-opacity duration-150 hover:opacity-80 cursor-pointer"
+        }),
+        !compact && h(Fragment, null,
+          h("text", { x: x + width / 2, y: y + height / 2 - 6, textAnchor: "middle", dominantBaseline: "middle", fill: "white", fontSize: "12", fontWeight: "800" }, name),
+          height > 40 && h("text", { x: x + width / 2, y: y + height / 2 + 10, textAnchor: "middle", dominantBaseline: "middle", fill: "white", fontSize: "10", fontWeight: "700" }, `${returnPct >= 0 ? '+' : ''}${returnPct}%`)
+        ),
+        compact && h("text", { x: x + width / 2, y: y + height / 2, textAnchor: "middle", dominantBaseline: "middle", fill: "white", fontSize: "10", fontWeight: "800" }, name)
+      );
+    }
+
+    function App() {
+      const [data, setData] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      const loadSheetData = () => {
+        setLoading(true);
+        Papa.parse(GOOGLE_SHEET_CSV_URL, {
+          download: true,
+          header: true,
+          complete: (results) => {
+            const parsed = results.data.map(row => {
+              const qty = parseFloat(row.quantity) || 0;
+              const price = parseFloat(row.price) || 0;
+              const retPct = parseFloat(row.returnPct) || 0;
+              return {
+                name: row.name,
+                assetClass: row.assetClass,
+                account: row.account,
+                value: qty * price, // 수량 * 단가 자동 계산
+                returnPct: retPct
+              };
+            }).filter(item => item.value > 0);
+
+            // 자산군별 그룹화
+            const grouped = {};
+            parsed.forEach(item => {
+              if (!grouped[item.assetClass]) {
+                grouped[item.assetClass] = { name: item.assetClass, children: [] };
+              }
+              grouped[item.assetClass].children.push({
+                name: item.name,
+                size: item.value,
+                returnPct: item.returnPct,
+                assetClass: item.assetClass,
+                account: item.account
+              });
+            });
+
+            setData(Object.values(grouped));
+            setLoading(false);
+          }
+        });
+      };
+
+      useEffect(() => { loadSheetData(); }, []);
+
+      if (loading) return h("div", { className: "flex h-screen items-center justify-center text-white" }, "구글 시트 데이터 불러오는 중...");
+
+      return h("div", { className: "p-4 max-w-[1600px] mx-auto space-y-4" },
+        h("div", { className: "flex justify-between items-center bg-slate-900 p-4 rounded-lg border border-slate-800" },
+          h("h1", { className: "text-lg font-bold" }, "구글 시트 연동 라이브 포트폴리오"),
+          h("button", { onClick: loadSheetData, className: "px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-xs font-bold transition" }, "시트 데이터 동기화 🔄")
+        ),
+        h("div", { className: "h-[calc(100vh-140px)] bg-slate-900 rounded-lg p-2 border border-slate-800" },
+          h(ResponsiveContainer, { width: "100%", height: "100%" },
+            h(Treemap, {
+              data: data,
+              dataKey: "size",
+              aspectRatio: 1.6,
+              stroke: "#0f172a",
+              content: h(Tile)
+            }, h(Tooltip))
+          )
+        )
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(h(App));
+  </script>
+</body>
+</html>
