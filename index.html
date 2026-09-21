@@ -111,21 +111,23 @@
       { id: "현금성 자산", label: "현금" },
     ];
 
-    function flattenLeaves(nodes, parent = null, account = null) {
+    function flattenLeaves(nodes, parent, account) {
       const result = [];
       nodes.forEach((node) => {
         if (node.children) {
-          const nextAccount = node.account || parent === "한국주식" ? node.name : account;
+          const nextAccount = node.account || (parent === "한국주식" ? node.name : account);
           result.push(...flattenLeaves(node.children, parent || node.name, nextAccount));
         } else {
-          result.push({ ...node, assetClass: parent, account });
+          result.push(Object.assign({}, node, { assetClass: parent, account: account }));
         }
       });
       return result;
     }
 
     function flattenAll() {
-      return portfolio.flatMap((asset) => flattenLeaves(asset.children, asset.name));
+      return portfolio.reduce((acc, asset) => {
+        return acc.concat(flattenLeaves(asset.children, asset.name, null));
+      }, []);
     }
 
     const allLeaves = flattenAll();
@@ -139,10 +141,10 @@
     }
 
     function pct(value) {
-      return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+      return (value >= 0 ? "+" : "") + value.toFixed(2) + "%";
     }
 
-    function pnlColor(returnPct, isCash = false) {
+    function pnlColor(returnPct, isCash) {
       if (isCash) return "#475569";
       if (returnPct > 15) return "#16a34a";
       if (returnPct > 7) return "#22c55e";
@@ -155,61 +157,64 @@
     function normalizeData(nodes, parentName) {
       return nodes.map((node) => {
         if (node.children) {
-          return { ...node, children: normalizeData(node.children, node.name) };
+          return Object.assign({}, node, { children: normalizeData(node.children, node.name) });
         }
-        return { ...node, parentName, size: node.value };
+        return Object.assign({}, node, { parentName: parentName, size: node.value });
       });
     }
 
-    function Tile({ x, y, width, height, name, returnPct, assetClass }) {
-      if (width < 42 || height < 30) return null;
+    function Tile(props) {
+      const x = props.x, y = props.y, width = props.width, height = props.height, name = props.name, returnPct = props.returnPct, assetClass = props.assetClass;
+      if (width < 35 || height < 25) return null;
       const isCash = assetClass === "현금성 자산";
       const background = pnlColor(returnPct, isCash);
-      const compact = width < 90 || height < 60;
+      const compact = width < 80 || height < 50;
 
       return h("g", null,
         h("rect", {
-          x, y, width, height, rx: 3, ry: 3, fill: background, stroke: "#0f172a", strokeWidth: 2,
+          x: x, y: y, width: width, height: height, rx: 3, ry: 3, fill: background, stroke: "#0f172a", strokeWidth: 2,
           className: "transition-opacity duration-150 hover:opacity-80 cursor-pointer"
         }),
         !compact && h(Fragment, null,
-          h("text", { x: x + width / 2, y: y + height / 2 - 7, textAnchor: "middle", dominantBaseline: "middle", fill: "white", fontSize: Math.min(17, Math.max(10, width / 7)), fontWeight: "800" }, name),
-          height > 48 && h("text", { x: x + width / 2, y: y + height / 2 + 13, textAnchor: "middle", dominantBaseline: "middle", fill: "white", fontSize: Math.min(13, Math.max(9, width / 10)), fontWeight: "700" }, pct(returnPct))
+          h("text", { x: x + width / 2, y: y + height / 2 - 6, textAnchor: "middle", dominantBaseline: "middle", fill: "white", fontSize: Math.min(16, Math.max(10, width / 7)), fontWeight: "800" }, name),
+          height > 45 && h("text", { x: x + width / 2, y: y + height / 2 + 12, textAnchor: "middle", dominantBaseline: "middle", fill: "white", fontSize: Math.min(12, Math.max(9, width / 10)), fontWeight: "700" }, pct(returnPct))
         ),
-        compact && width > 58 && height > 35 && h("text", { x: x + width / 2, y: y + height / 2, textAnchor: "middle", dominantBaseline: "middle", fill: "white", fontSize: "10", fontWeight: "800" }, name.length > 8 ? `${name.slice(0, 7)}…` : name)
+        compact && width > 45 && height > 28 && h("text", { x: x + width / 2, y: y + height / 2, textAnchor: "middle", dominantBaseline: "middle", fill: "white", fontSize: "10", fontWeight: "800" }, name.length > 7 ? name.slice(0, 6) + "…" : name)
       );
     }
 
     function TreemapNode(props) {
-      const { x, y, width, height, name, children, returnPct, assetClass, onDrill } = props;
+      const x = props.x, y = props.y, width = props.width, height = props.height, name = props.name, children = props.children, returnPct = props.returnPct, assetClass = props.assetClass, onDrill = props.onDrill;
       if (children) {
-        return h("g", { onClick: () => onDrill?.(props), className: onDrill ? "cursor-pointer" : "" },
-          h("rect", { x, y, width, height, fill: "#1e293b", stroke: "#0f172a", strokeWidth: 3, rx: 3 }),
-          width > 100 && height > 28 && h("text", { x: x + 8, y: y + 17, fill: "#94a3b8", fontSize: "11", fontWeight: "800" }, name)
+        return h("g", { onClick: function() { if (onDrill) onDrill(props); }, className: onDrill ? "cursor-pointer" : "" },
+          h("rect", { x: x, y: y, width: width, height: height, fill: "#1e293b", stroke: "#0f172a", strokeWidth: 3, rx: 3 }),
+          width > 80 && height > 24 && h("text", { x: x + 8, y: y + 16, fill: "#94a3b8", fontSize: "11", fontWeight: "800" }, name)
         );
       }
-      return h(Tile, { x, y, width, height, name, returnPct: returnPct || 0, assetClass });
+      return h(Tile, { x: x, y: y, width: width, height: height, name: name, returnPct: returnPct || 0, assetClass: assetClass });
     }
 
-    function Row({ label, value, valueClass = "text-slate-200" }) {
+    function Row(props) {
       return h("div", { className: "flex items-center justify-between gap-4" },
-        h("span", { className: "text-slate-500" }, label),
-        h("span", { className: `font-semibold ${valueClass}` }, value)
+        h("span", { className: "text-slate-500" }, props.label),
+        h("span", { className: "font-semibold " + (props.valueClass || "text-slate-200") }, props.value)
       );
     }
 
-    function CustomTooltip({ active, payload }) {
-      if (!active || !payload?.length) return null;
-      const item = payload[0]?.payload;
+    function CustomTooltip(props) {
+      const active = props.active, payload = props.payload;
+      if (!active || !payload || !payload.length) return null;
+      const item = payload[0] && payload[0].payload;
       if (!item || !item.value) return null;
       const assetClass = item.assetClass || item.parentName;
       const isCash = assetClass === "현금성 자산";
+      const totalSum = allLeaves.reduce((sum, i) => sum + i.value, 0);
 
-      return h("div", { className: "min-w-[250px] rounded-lg border border-slate-600 bg-slate-950/95 p-3 text-xs shadow-2xl backdrop-blur" },
+      return h("div", { className: "min-w-[240px] rounded-lg border border-slate-600 bg-slate-950/95 p-3 text-xs shadow-2xl backdrop-blur" },
         h("div", { className: "mb-2 flex items-center justify-between gap-4" },
           h("div", null,
             h("div", { className: "text-sm font-bold text-white" }, item.name),
-            h("div", { className: "text-[11px] text-slate-400" }, item.fullName)
+            h("div", { className: "text-[11px] text-slate-400" }, item.fullName || "")
           ),
           h("div", { className: "rounded px-2 py-1 font-bold text-white", style: { background: pnlColor(item.returnPct, isCash) } }, pct(item.returnPct))
         ),
@@ -218,63 +223,71 @@
           item.account && h(Row, { label: "계좌", value: item.account }),
           h(Row, { label: "평가금액", value: won(item.value) }),
           h(Row, { label: "USD", value: usd(item.value) }),
-          h(Row, { label: "보유비중", value: `${((item.value / allLeaves.reduce((a, b) => a + b.value, 0)) * 100).toFixed(2)}%` }),
-          h(Row, { label: "평가손익", value: won(item.pnl), valueClass: item.pnl >= 0 ? "text-green-400" : "text-red-400" })
+          h(Row, { label: "보유비중", value: ((item.value / totalSum) * 100).toFixed(2) + "%" }),
+          h(Row, { label: "평가손익", value: won(item.pnl || 0), valueClass: (item.pnl || 0) >= 0 ? "text-green-400" : "text-red-400" })
         )
       );
     }
 
-    function Metric({ label, value, positive }) {
+    function Metric(props) {
       return h("div", { className: "rounded-md border border-slate-800 bg-slate-900/80 px-3 py-1.5" },
-        h("div", { className: "text-[9px] font-semibold uppercase tracking-wider text-slate-600" }, label),
-        h("div", { className: `text-xs font-black ${positive === true ? "text-green-400" : positive === false ? "text-red-400" : "text-white"}` }, value)
+        h("div", { className: "text-[9px] font-semibold uppercase tracking-wider text-slate-600" }, props.label),
+        h("div", { className: "text-xs font-black " + (props.positive === true ? "text-green-400" : props.positive === false ? "text-red-400" : "text-white") }, props.value)
       );
     }
 
-    function LegendBox({ color, label }) {
+    function LegendBox(props) {
       return h("div", { className: "flex items-center gap-1" },
-        h("span", { className: "h-2.5 w-2.5 rounded-sm", style: { backgroundColor: color } }),
-        h("span", null, label)
+        h("span", { className: "h-2.5 w-2.5 rounded-sm", style: { backgroundColor: props.color } }),
+        h("span", null, props.label)
       );
     }
 
     function PortfolioHeatmap() {
-      const [activeTab, setActiveTab] = useState("all");
-      const [currency, setCurrency] = useState("KRW");
-      const [drillPath, setDrillPath] = useState([]);
+      const activeTabState = useState("all");
+      const activeTab = activeTabState[0], setActiveTab = activeTabState[1];
 
-      const filteredPortfolio = useMemo(() => {
+      const currencyState = useState("KRW");
+      const currency = currencyState[0], setCurrency = currencyState[1];
+
+      const drillPathState = useState([]);
+      const drillPath = drillPathState[0], setDrillPath = drillPathState[1];
+
+      const filteredPortfolio = useMemo(function() {
         if (activeTab === "all") return portfolio;
-        return portfolio.filter((asset) => asset.name === activeTab);
+        return portfolio.filter(function(asset) { return asset.name === activeTab; });
       }, [activeTab]);
 
-      const currentRoot = useMemo(() => {
+      const currentRoot = useMemo(function() {
         if (!drillPath.length) return filteredPortfolio;
         let current = filteredPortfolio;
-        for (const name of drillPath) {
-          const found = current.find((item) => item.name === name);
-          if (!found?.children) return current;
+        for (let i = 0; i < drillPath.length; i++) {
+          const name = drillPath[i];
+          const found = current.find(function(item) { return item.name === name; });
+          if (!found || !found.children) return current;
           current = found.children;
         }
         return current;
       }, [filteredPortfolio, drillPath]);
 
-      const displayData = useMemo(() => normalizeData(currentRoot, activeTab), [currentRoot, activeTab]);
+      const displayData = useMemo(function() {
+        return normalizeData(currentRoot, activeTab);
+      }, [currentRoot, activeTab]);
 
       const total = allLeaves.reduce((sum, item) => sum + item.value, 0);
       const totalPnl = allLeaves.reduce((sum, item) => sum + item.pnl, 0);
-      const baseCost = allLeaves.reduce((sum, item) => sum + item.value - item.pnl, 0);
+      const baseCost = allLeaves.reduce((sum, item) => sum + (item.value - item.pnl), 0);
       const totalReturn = baseCost > 0 ? (totalPnl / baseCost) * 100 : 0;
       const todayPnl = 384000;
 
       const currencyValue = currency === "KRW" ? won(total) : usd(total);
 
-      const handleDrill = (node) => {
-        if (!node?.children) return;
-        setDrillPath((prev) => [...prev, node.name]);
+      const handleDrill = function(node) {
+        if (!node || !node.children) return;
+        setDrillPath(function(prev) { return prev.concat([node.name]); });
       };
 
-      const resetDrill = () => setDrillPath([]);
+      const resetDrill = function() { setDrillPath([]); };
 
       return h("div", { className: "min-h-screen bg-[#0f172a] text-slate-100" },
         h("header", { className: "border-b border-slate-800 bg-[#0f172a]" },
@@ -291,27 +304,27 @@
               ),
               h("div", { className: "flex flex-wrap items-center gap-2" },
                 h(Metric, { label: "총 자산", value: currencyValue }),
-                h(Metric, { label: "당일 손익", value: `${todayPnl >= 0 ? "+" : ""}${won(todayPnl)}`, positive: todayPnl >= 0 }),
+                h(Metric, { label: "당일 손익", value: (todayPnl >= 0 ? "+" : "") + won(todayPnl), positive: todayPnl >= 0 }),
                 h(Metric, { label: "전체 수익률", value: pct(totalReturn), positive: totalReturn >= 0 }),
                 h("div", { className: "ml-1 flex rounded-md border border-slate-700 bg-slate-900 p-0.5" },
-                  ["KRW", "USD"].map((c) =>
-                    h("button", {
+                  ["KRW", "USD"].map(function(c) {
+                    return h("button", {
                       key: c,
-                      onClick: () => setCurrency(c),
-                      className: `rounded px-2.5 py-1 text-[10px] font-bold transition ${currency === c ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`
-                    }, c)
-                  )
+                      onClick: function() { setCurrency(c); },
+                      className: "rounded px-2.5 py-1 text-[10px] font-bold transition " + (currency === c ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300")
+                    }, c);
+                  })
                 )
               )
             ),
             h("div", { className: "mt-3 flex gap-1 overflow-x-auto pb-0.5" },
-              tabs.map((tab) =>
-                h("button", {
+              tabs.map(function(tab) {
+                return h("button", {
                   key: tab.id,
-                  onClick: () => { setActiveTab(tab.id); resetDrill(); },
-                  className: `whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-bold transition ${activeTab === tab.id ? "bg-slate-100 text-slate-950" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`
-                }, tab.label)
-              )
+                  onClick: function() { setActiveTab(tab.id); resetDrill(); },
+                  className: "whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-bold transition " + (activeTab === tab.id ? "bg-slate-100 text-slate-950" : "text-slate-400 hover:bg-slate-800 hover:text-white")
+                }, tab.label);
+              })
             )
           )
         ),
@@ -319,15 +332,15 @@
           h("div", { className: "mb-2 flex items-center justify-between" },
             h("div", { className: "flex items-center gap-2 text-[11px]" },
               h("button", { onClick: resetDrill, className: "font-semibold text-slate-400 hover:text-white" }, "전체"),
-              drillPath.map((path, index) =>
-                h(Fragment, { key: `${path}-${index}` },
+              drillPath.map(function(path, index) {
+                return h(Fragment, { key: path + "-" + index },
                   h("span", { className: "text-slate-700" }, "/"),
                   h("button", {
-                    onClick: () => setDrillPath(drillPath.slice(0, index + 1)),
+                    onClick: function() { setDrillPath(drillPath.slice(0, index + 1)); },
                     className: "font-semibold text-slate-300 hover:text-white"
                   }, path)
-                )
-              )
+                );
+              })
             ),
             h("div", { className: "text-[10px] text-slate-600" }, drillPath.length ? drillPath.join(" / ") : "전체 포트폴리오")
           ),
